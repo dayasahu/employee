@@ -1,4 +1,5 @@
-FROM eclipse-temurin:17-jdk
+FROM eclipse-temurin:21-jre
+
 WORKDIR /app
 
 ARG JAR_FILE=target/employee.jar
