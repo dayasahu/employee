@@ -1,20 +1,48 @@
 apiVersion: tekton.dev/v1beta1
-kind: PipelineRun
+kind: Pipeline
 metadata:
-  name: employee-ci-run
+  name: employee-ci
 spec:
-  pipelineRef:
-    name: employee-ci
   params:
+    - name: GIT_URL
+    - name: GIT_REVISION
+      default: main
     - name: IMAGE
-      value: dayasahu6077/employee
     - name: VERSION
-      value: "20250106-1"
+
   workspaces:
     - name: shared-workspace
-      volumeClaimTemplate:
-        spec:
-          accessModes: ["ReadWriteOnce"]
-          resources:
-            requests:
-              storage: 1Gi
+
+  tasks:
+    - name: clone
+      taskRef:
+        name: git-clone
+      params:
+        - name: url
+          value: $(params.GIT_URL)
+        - name: revision
+          value: $(params.GIT_REVISION)
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+
+    - name: maven
+      runAfter: ["clone"]
+      taskRef:
+        name: maven-build
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    - name: docker
+      runAfter: ["maven"]
+      taskRef:
+        name: docker-build-push
+      params:
+        - name: IMAGE
+          value: $(params.IMAGE)
+        - name: VERSION
+          value: $(params.VERSION)
+      workspaces:
+        - name: source
+          workspace: shared-workspace
