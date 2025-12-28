@@ -6,7 +6,7 @@ spec:
   params:
     - name: GIT_URL
     - name: GIT_REVISION
-      default: main
+      default: master
     - name: IMAGE
     - name: VERSION
 

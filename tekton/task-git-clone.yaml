@@ -6,7 +6,7 @@ spec:
   params:
     - name: url
     - name: revision
-      default: main
+      default: master
   workspaces:
     - name: output
   steps:

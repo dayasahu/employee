@@ -13,9 +13,20 @@ spec:
       image: gcr.io/kaniko-project/executor:latest
       env:
         - name: DOCKER_CONFIG
-          value: /tekton/home/.docker
+          value: /kaniko/.docker
+      volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+          readOnly: true
       args:
         - --dockerfile=Dockerfile
         - --context=$(workspaces.source.path)
         - --destination=$(params.IMAGE):$(params.VERSION)
         - --destination=$(params.IMAGE):latest
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: dockerhub-secret
+        items:
+          - key: .dockerconfigjson
+            path: config.json

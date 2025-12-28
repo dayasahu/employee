@@ -4,7 +4,7 @@ metadata:
   generateName: employee-ci-run-
   namespace: tekton-pipelines
 spec:
-  serviceAccountName: tekton-build-sa
+  serviceAccountName: tekton-ci-sa
   pipelineRef:
     name: employee-ci
   params:
