@@ -14,8 +14,8 @@ spec:
       value: master
     - name: IMAGE
       value: dayasahu6077/employee
-    - name: VERSION
-      value: "20250106-1"
+    - name: VERSION_PREFIX
+      value: ""
   workspaces:
     - name: shared-workspace
       volumeClaimTemplate:
