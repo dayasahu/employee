@@ -46,7 +46,7 @@ public class EmployeeController {
     @GetMapping("/envmsg")
     public String environmentMessage() {
         // Read the property 'poc.environment.msg' from the active environment (application-*.properties)
-        String msg = env.getProperty("poc.environment.msg")+"added to test ci/cd";
+        String msg = env.getProperty("poc.environment.msg")+"added to test ci/cd"+"testing deploy";
         return msg != null ? msg : "";
     }
 }

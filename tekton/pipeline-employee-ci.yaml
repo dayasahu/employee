@@ -46,3 +46,16 @@ spec:
       workspaces:
         - name: source
           workspace: shared-workspace
+    - name: deploy
+      runAfter: [ "docker" ]
+      taskRef:
+        name: kubectl-deploy
+      params:
+        - name: DEPLOYMENT_NAME
+          value: employee
+        - name: CONTAINER_NAME
+          value: employee
+        - name: IMAGE
+          value: $(params.IMAGE):$(params.VERSION)
+        - name: NAMESPACE
+          value: default
