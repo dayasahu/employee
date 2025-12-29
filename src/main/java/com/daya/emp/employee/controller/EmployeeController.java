@@ -11,7 +11,7 @@ import java.util.Collections;
 import java.util.List;
 
 @RestController
-@RequestMapping("/employee")
+@RequestMapping("/api")
 public class EmployeeController {
 
     private final Environment env;
