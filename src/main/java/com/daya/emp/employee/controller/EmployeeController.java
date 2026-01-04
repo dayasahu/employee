@@ -4,6 +4,8 @@ import com.daya.emp.employee.model.Employee;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 import org.springframework.core.env.Environment;
 
 import java.util.Arrays;
@@ -15,9 +17,11 @@ import java.util.List;
 public class EmployeeController {
 
     private final Environment env;
+    private final WebClient webClient;
 
-    public EmployeeController(Environment env) {
+    public EmployeeController(Environment env, WebClient webClient) {
         this.env = env;
+        this.webClient = webClient;
     }
 
     @GetMapping("/hello")
@@ -48,5 +52,13 @@ public class EmployeeController {
         // Read the property 'poc.environment.msg' from the active environment (application-*.properties)
         String msg = env.getProperty("poc.environment.msg")+"added to test ci/cd"+"testing deploy";
         return msg != null ? msg : "";
+    }
+
+    @GetMapping("/departments")
+    public Mono<String> departments() {
+        return webClient.get()
+                .uri("http://department/api/list")
+                .retrieve()
+                .bodyToMono(String.class);
     }
 }
