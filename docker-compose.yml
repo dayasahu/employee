@@ -35,6 +35,15 @@ services:
     - dsnetwork
 
 
+  auth-service:
+    image: dayasahu6077/auth-service:v1
+    ports:
+      - "9000:9000"
+    environment:
+      - JWT_SECRET=myDefaultSecretKey1234567890abcdefghij
+    networks:
+      - dsnetwork
+
 networks:
   dsnetwork:
     driver: bridge
