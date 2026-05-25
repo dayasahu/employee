@@ -73,15 +73,24 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
         </dependency>
+        <!-- Observability: Micrometer -> OpenTelemetry tracing bridge.
+             Version is managed by spring-boot-starter-parent 3.5.x. -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-bridge-otel</artifactId>
-            <version>1.2.0</version>
         </dependency>
+        <!-- OTLP exporter for traces (managed by Spring Boot BOM). -->
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-exporter-otlp</artifactId>
-            <version>1.28.0</version>
+        </dependency>
+        <!-- Logback appender that ships logs to the OTel collector via OTLP.
+             Spring Boot 3.5 doesn't manage this artifact; pin explicitly.
+             All releases of this appender are tagged -alpha per OTel convention. -->
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-logback-appender-1.0</artifactId>
+            <version>2.27.0-alpha</version>
         </dependency>
 		<dependency>
 			<groupId>io.micrometer</groupId>
