@@ -72,7 +72,7 @@ jobs:
   # ══════════════════════════════════════════════════════════════════
   push-image:
     name: "3 · Push Image → Docker Hub"
-    needs: integration-test
+    needs: [build, integration-test]
     runs-on: self-hosted
     steps:
       - name: Login to Docker Hub
@@ -81,14 +81,16 @@ jobs:
 
       - name: Push image
         shell: powershell
-        run: docker push "$env:IMAGE`:${{ needs.build.outputs.image_tag }}"
+        run: |
+          $tag = "${{ needs.build.outputs.image_tag }}"
+          docker push "$env:IMAGE`:$tag"
 
   # ══════════════════════════════════════════════════════════════════
   # 4. DEPLOY GREEN
   # ══════════════════════════════════════════════════════════════════
   deploy-green:
     name: "4 · Deploy Green"
-    needs: push-image
+    needs: [build, push-image]
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
@@ -104,8 +106,9 @@ jobs:
       - name: Set green image
         shell: powershell
         run: |
+          $tag = "${{ needs.build.outputs.image_tag }}"
           kubectl argo rollouts set image $env:SERVICE `
-            "$env:SERVICE=$env:IMAGE`:${{ needs.build.outputs.image_tag }}" `
+            "$env:SERVICE=$env:IMAGE`:$tag" `
             -n $env:NAMESPACE
 
       - name: Wait for green pods ready
