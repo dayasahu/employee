@@ -127,8 +127,6 @@ jobs:
     needs: deploy-green
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
-
       - name: Start port-forward
         shell: powershell
         run: |
