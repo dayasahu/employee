@@ -41,7 +41,8 @@ public class EmployeeController {
         List<Employee> employeeList = Arrays.asList(
                 new Employee(1L, "Alice", "Developer"),
                 new Employee(2L, "Bob", "Manager"),
-                new Employee(3L, "Carol", "QA")
+                new Employee(3L, "Carol", "QA"),
+                new Employee(4L, "Daya", "Designer")
         );
         log.info("Returning employees: {}", employeeList);
         log.info("Exiting employees method");
