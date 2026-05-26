@@ -27,21 +27,25 @@ jobs:
 
       - name: Set image tag (short git SHA)
         id: tag
-        shell: bash
-        run: echo "tag=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_SHA.Substring(0, 8)
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Image tag: $tag"
 
       - name: Run unit tests
-        shell: bash
+        shell: pwsh
         run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace" \
-            -w /workspace \
-            maven:3.9.9-eclipse-temurin-21 \
+          $workspace = "${{ github.workspace }}".Replace('\', '/')
+          docker run --rm `
+            -v "${workspace}:/workspace" `
+            -w /workspace `
+            maven:3.9.9-eclipse-temurin-21 `
             mvn -B test
 
       - name: Build Docker image
-        shell: bash
-        run: docker build -t $IMAGE:${{ steps.tag.outputs.tag }} .
+        shell: pwsh
+        run: docker build -t "$env:IMAGE`:${{ steps.tag.outputs.tag }}" .
 
   # ══════════════════════════════════════════════════════════════════
   # 2. INTEGRATION TESTS
@@ -53,17 +57,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run integration tests (Spring Boot Test + H2)
-        shell: bash
+      - name: Run integration tests
+        shell: pwsh
         run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace" \
-            -w /workspace \
-            maven:3.9.9-eclipse-temurin-21 \
+          $workspace = "${{ github.workspace }}".Replace('\', '/')
+          docker run --rm `
+            -v "${workspace}:/workspace" `
+            -w /workspace `
+            maven:3.9.9-eclipse-temurin-21 `
             mvn -B verify -DskipUnitTests
 
   # ══════════════════════════════════════════════════════════════════
-  # 3. PUSH IMAGE TO DOCKER HUB
+  # 3. PUSH IMAGE
   # ══════════════════════════════════════════════════════════════════
   push-image:
     name: "3 · Push Image → Docker Hub"
@@ -71,15 +76,16 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Login to Docker Hub
-        shell: bash
-        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+        shell: pwsh
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
       - name: Push image
-        shell: bash
-        run: docker push $IMAGE:${{ needs.build.outputs.image_tag }}
+        shell: pwsh
+        run: docker push "$env:IMAGE`:${{ needs.build.outputs.image_tag }}"
 
   # ══════════════════════════════════════════════════════════════════
-  # 4. DEPLOY GREEN (new version as preview)
+  # 4. DEPLOY GREEN
   # ══════════════════════════════════════════════════════════════════
   deploy-green:
     name: "4 · Deploy Green"
@@ -89,31 +95,30 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Apply Rollout manifests
-        shell: bash
+        shell: pwsh
         run: |
-          kubectl apply -f k8/analysis-template.yaml -n $NAMESPACE
-          kubectl apply -f k8/service-preview.yaml   -n $NAMESPACE
-          # Delete old Deployment if exists (first-time migration to Rollout)
-          kubectl delete deployment $SERVICE -n $NAMESPACE --ignore-not-found=true
-          kubectl apply -f k8/rollout.yaml -n $NAMESPACE
+          kubectl apply -f k8/analysis-template.yaml -n $env:NAMESPACE
+          kubectl apply -f k8/service-preview.yaml   -n $env:NAMESPACE
+          kubectl delete deployment $env:SERVICE -n $env:NAMESPACE --ignore-not-found=true
+          kubectl apply -f k8/rollout.yaml -n $env:NAMESPACE
 
       - name: Set green image
-        shell: bash
+        shell: pwsh
         run: |
-          kubectl argo rollouts set image $SERVICE \
-            $SERVICE=$IMAGE:${{ needs.build.outputs.image_tag }} \
-            -n $NAMESPACE
+          kubectl argo rollouts set image $env:SERVICE `
+            "$env:SERVICE=$env:IMAGE`:${{ needs.build.outputs.image_tag }}" `
+            -n $env:NAMESPACE
 
-      - name: Wait for green pods to be ready
-        shell: bash
+      - name: Wait for green pods ready
+        shell: pwsh
         run: |
-          echo "⏳ Waiting for green pods..."
-          sleep 30
-          kubectl -n $NAMESPACE get pods -l app=$SERVICE
-          kubectl argo rollouts get rollout $SERVICE -n $NAMESPACE
+          Write-Host "Waiting for green pods..."
+          Start-Sleep 30
+          kubectl -n $env:NAMESPACE get pods -l app=$env:SERVICE
+          kubectl argo rollouts get rollout $env:SERVICE -n $env:NAMESPACE
 
   # ══════════════════════════════════════════════════════════════════
-  # 5. SMOKE TESTS on green preview
+  # 5. SMOKE TESTS
   # ══════════════════════════════════════════════════════════════════
   smoke-test:
     name: "5 · Smoke Tests"
@@ -122,24 +127,63 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Port-forward preview service
-        shell: bash
+      - name: Start port-forward
+        shell: pwsh
         run: |
-          kubectl port-forward svc/$PREVIEW_SVC $PREVIEW_PORT:8080 -n $NAMESPACE &
-          echo $! > /tmp/pf_smoke_pid
-          sleep 5
+          $job = Start-Job { kubectl port-forward svc/employee-preview 18080:8080 -n microservices }
+          $job.Id | Out-File "$env:TEMP\pf_smoke.txt"
+          Start-Sleep 5
+          Write-Host "Port-forward started (job $($job.Id))"
 
       - name: Run smoke tests
-        shell: bash
-        run: bash tests/smoke/smoke-test.sh http://localhost:$PREVIEW_PORT
+        shell: pwsh
+        run: |
+          $base = "http://localhost:$env:PREVIEW_PORT"
+          $pass = 0; $fail = 0
+
+          function Check($name, $expected, $actual) {
+            if ($actual -eq $expected) { Write-Host "  ✅ $name"; $script:pass++ }
+            else { Write-Host "  ❌ $name — expected '$expected' got '$actual'"; $script:fail++ }
+          }
+
+          Write-Host "`n🔍 Smoke tests → $base"
+          Write-Host "───────────────────────────────"
+
+          # 1. Readiness
+          Write-Host "1. Health / readiness"
+          try { $r = Invoke-RestMethod "$base/actuator/health/readiness"; Check "status=UP" "UP" $r.status }
+          catch { Check "status=UP" "UP" "UNREACHABLE" }
+
+          # 2. /api/hello
+          Write-Host "2. GET /api/hello"
+          try { $r = Invoke-WebRequest "$base/api/hello" -UseBasicParsing; Check "HTTP 200" "200" "$($r.StatusCode)" }
+          catch { Check "HTTP 200" "200" "FAILED" }
+
+          # 3. /api/employees
+          Write-Host "3. GET /api/employees"
+          try { $r = Invoke-WebRequest "$base/api/employees" -UseBasicParsing; Check "HTTP 200" "200" "$($r.StatusCode)" }
+          catch { Check "HTTP 200" "200" "FAILED" }
+
+          # 4. /api/profile
+          Write-Host "4. GET /api/profile"
+          try { $r = Invoke-WebRequest "$base/api/profile" -UseBasicParsing; Check "HTTP 200" "200" "$($r.StatusCode)" }
+          catch { Check "HTTP 200" "200" "FAILED" }
+
+          Write-Host "───────────────────────────────"
+          Write-Host "Results: $pass passed, $fail failed"
+
+          if ($fail -gt 0) { Write-Host "❌ Smoke tests FAILED"; exit 1 }
+          Write-Host "✅ All smoke tests PASSED"
 
       - name: Stop port-forward
         if: always()
-        shell: bash
-        run: kill $(cat /tmp/pf_smoke_pid) 2>/dev/null || true
+        shell: pwsh
+        run: |
+          $id = Get-Content "$env:TEMP\pf_smoke.txt" -ErrorAction SilentlyContinue
+          if ($id) { Stop-Job -Id $id -ErrorAction SilentlyContinue; Remove-Job -Id $id -Force -ErrorAction SilentlyContinue }
 
   # ══════════════════════════════════════════════════════════════════
-  # 6. PERFORMANCE TESTS on green preview
+  # 6. PERFORMANCE TESTS (k6)
   # ══════════════════════════════════════════════════════════════════
   performance-test:
     name: "6 · Performance Tests (k6)"
@@ -148,28 +192,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Port-forward preview service
-        shell: bash
+      - name: Start port-forward
+        shell: pwsh
         run: |
-          kubectl port-forward svc/$PREVIEW_SVC $PREVIEW_PORT:8080 -n $NAMESPACE &
-          echo $! > /tmp/pf_perf_pid
-          sleep 5
+          $job = Start-Job { kubectl port-forward svc/employee-preview 18080:8080 -n microservices }
+          $job.Id | Out-File "$env:TEMP\pf_perf.txt"
+          Start-Sleep 5
 
       - name: Run k6 load test
-        shell: bash
+        shell: pwsh
         run: |
-          docker run --rm --network host \
-            -v "${{ github.workspace }}/tests/performance:/tests" \
-            -e BASE_URL=http://localhost:$PREVIEW_PORT \
+          $workspace = "${{ github.workspace }}".Replace('\', '/')
+          docker run --rm `
+            -v "${workspace}/tests/performance:/tests" `
+            -e BASE_URL=http://host.docker.internal:$env:PREVIEW_PORT `
             grafana/k6 run /tests/load-test.js
 
       - name: Stop port-forward
         if: always()
-        shell: bash
-        run: kill $(cat /tmp/pf_perf_pid) 2>/dev/null || true
+        shell: pwsh
+        run: |
+          $id = Get-Content "$env:TEMP\pf_perf.txt" -ErrorAction SilentlyContinue
+          if ($id) { Stop-Job -Id $id -ErrorAction SilentlyContinue; Remove-Job -Id $id -Force -ErrorAction SilentlyContinue }
 
   # ══════════════════════════════════════════════════════════════════
-  # 7. E2E TESTS on green preview (Newman / Postman)
+  # 7. E2E TESTS (Newman)
   # ══════════════════════════════════════════════════════════════════
   e2e-test:
     name: "7 · E2E Tests (Newman)"
@@ -178,41 +225,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Port-forward preview service
-        shell: bash
+      - name: Start port-forward
+        shell: pwsh
         run: |
-          kubectl port-forward svc/$PREVIEW_SVC $PREVIEW_PORT:8080 -n $NAMESPACE &
-          echo $! > /tmp/pf_e2e_pid
-          sleep 5
+          $job = Start-Job { kubectl port-forward svc/employee-preview 18080:8080 -n microservices }
+          $job.Id | Out-File "$env:TEMP\pf_e2e.txt"
+          Start-Sleep 5
 
       - name: Run Newman E2E tests
-        shell: bash
+        shell: pwsh
         run: |
-          docker run --rm --network host \
-            -v "${{ github.workspace }}/tests/e2e:/etc/newman" \
-            postman/newman run /etc/newman/collection.json \
-              --env-var "baseUrl=http://localhost:$PREVIEW_PORT" \
+          $workspace = "${{ github.workspace }}".Replace('\', '/')
+          docker run --rm `
+            -v "${workspace}/tests/e2e:/etc/newman" `
+            postman/newman run /etc/newman/collection.json `
+              --env-var "baseUrl=http://host.docker.internal:$env:PREVIEW_PORT" `
               --reporters cli
 
       - name: Stop port-forward
         if: always()
-        shell: bash
-        run: kill $(cat /tmp/pf_e2e_pid) 2>/dev/null || true
+        shell: pwsh
+        run: |
+          $id = Get-Content "$env:TEMP\pf_e2e.txt" -ErrorAction SilentlyContinue
+          if ($id) { Stop-Job -Id $id -ErrorAction SilentlyContinue; Remove-Job -Id $id -Force -ErrorAction SilentlyContinue }
 
   # ══════════════════════════════════════════════════════════════════
-  # 8. MANUAL APPROVAL GATE
+  # 8. MANUAL APPROVAL
   # ══════════════════════════════════════════════════════════════════
   approval:
     name: "8 · Manual Approval ✋"
     needs: e2e-test
     runs-on: ubuntu-latest
-    environment: production        # ← Requires reviewer approval in GitHub
+    environment: production
     steps:
-      - name: Approved for promotion
-        run: echo "✅ Approved. Promoting green → active."
+      - run: echo "✅ Approved. Promoting green → active."
 
   # ══════════════════════════════════════════════════════════════════
-  # 9. PROMOTE GREEN → ACTIVE
+  # 9. PROMOTE
   # ══════════════════════════════════════════════════════════════════
   promote:
     name: "9 · Promote Green → Active 🚀"
@@ -220,21 +269,21 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Promote rollout
-        shell: bash
-        run: kubectl argo rollouts promote $SERVICE -n $NAMESPACE
+        shell: pwsh
+        run: kubectl argo rollouts promote $env:SERVICE -n $env:NAMESPACE
 
       - name: Wait for promotion
-        shell: bash
-        run: kubectl argo rollouts status $SERVICE -n $NAMESPACE --timeout=60s
+        shell: pwsh
+        run: kubectl argo rollouts status $env:SERVICE -n $env:NAMESPACE --timeout=60s
 
-      - name: Deployment summary
-        shell: bash
+      - name: Summary
+        shell: pwsh
         run: |
-          echo "🚀 Promotion complete — green is now live!"
-          kubectl argo rollouts get rollout $SERVICE -n $NAMESPACE
+          Write-Host "🚀 Promotion complete — green is now live!"
+          kubectl argo rollouts get rollout $env:SERVICE -n $env:NAMESPACE
 
   # ══════════════════════════════════════════════════════════════════
-  # AUTO-ROLLBACK on any test failure
+  # AUTO-ROLLBACK on test failure
   # ══════════════════════════════════════════════════════════════════
   rollback:
     name: "⛔ Rollback to Blue"
@@ -243,9 +292,9 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Abort and rollback
-        shell: bash
+        shell: pwsh
         run: |
-          echo "❌ Tests failed — rolling back to blue..."
-          kubectl argo rollouts abort $SERVICE -n $NAMESPACE || true
-          kubectl argo rollouts undo  $SERVICE -n $NAMESPACE || true
-          echo "✅ Blue is still live. No impact to production."
+          Write-Host "❌ Tests failed — rolling back to blue..."
+          kubectl argo rollouts abort $env:SERVICE -n $env:NAMESPACE
+          kubectl argo rollouts undo  $env:SERVICE -n $env:NAMESPACE
+          Write-Host "✅ Blue is still live. No impact to production."
