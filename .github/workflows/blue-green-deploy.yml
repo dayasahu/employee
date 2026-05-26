@@ -130,12 +130,40 @@ jobs:
       - name: Start port-forward
         shell: powershell
         run: |
+          Write-Host "=== Rollout state ==="
+          kubectl argo rollouts get rollout $env:SERVICE -n $env:NAMESPACE
+
+          Write-Host "=== Preview service endpoints ==="
+          kubectl get endpoints $env:PREVIEW_SVC -n $env:NAMESPACE
+
+          Write-Host "=== Pods ==="
+          kubectl get pods -n $env:NAMESPACE -l app=$env:SERVICE
+
+          Write-Host "=== Starting port-forward ==="
           $proc = Start-Process -FilePath "kubectl" `
-            -ArgumentList "port-forward","svc/employee-preview","18080:8080","-n","microservices" `
-            -WindowStyle Hidden -PassThru
+            -ArgumentList "port-forward","svc/$env:PREVIEW_SVC","$env:PREVIEW_PORT`:8080","-n","$env:NAMESPACE" `
+            -PassThru
           $proc.Id | Out-File "$env:TEMP\pf_smoke.txt"
-          Start-Sleep 8
-          Write-Host "Port-forward started (pid $($proc.Id))"
+          Write-Host "kubectl pid: $($proc.Id)"
+
+          Write-Host "=== Waiting for port $env:PREVIEW_PORT to be ready ==="
+          $ready = $false
+          for ($i = 1; $i -le 30; $i++) {
+            Start-Sleep 1
+            try {
+              $t = New-Object System.Net.Sockets.TcpClient
+              $t.Connect("127.0.0.1", [int]$env:PREVIEW_PORT)
+              $t.Close()
+              $ready = $true
+              Write-Host "Port $env:PREVIEW_PORT ready after ${i}s"
+              break
+            } catch {}
+            Write-Host "  waiting... ${i}s (kubectl alive: $(-not $proc.HasExited))"
+          }
+          if (-not $ready) {
+            Write-Host "Port $env:PREVIEW_PORT not ready after 30s"
+            exit 1
+          }
 
       - name: Run smoke tests
         shell: powershell
