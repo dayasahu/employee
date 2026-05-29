@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    Two appenders:
-      STDOUT - JSON via LogstashEncoder (existing behaviour preserved)
-      OTEL   - OpenTelemetry OTLP appender that ships logs to the collector
-
-    The OTLP appender forwards records via the global OpenTelemetry SDK, so
-    its endpoint comes from Spring Boot's management.otlp.* properties.
+    Single appender: STDOUT JSON via LogstashEncoder.
+    Logs are collected from pod stdout by the OTel Collector DaemonSet
+    and shipped to Loki automatically — no in-process OTLP appender needed.
 -->
 <configuration>
 
@@ -16,15 +13,8 @@
         </encoder>
     </appender>
 
-    <appender name="OTEL"
-              class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
-        <captureExperimentalAttributes>true</captureExperimentalAttributes>
-        <captureMdcAttributes>*</captureMdcAttributes>
-        <captureCodeAttributes>true</captureCodeAttributes>
-    </appender>
-
     <root level="info">
         <appender-ref ref="STDOUT"/>
-        <appender-ref ref="OTEL"/>
     </root>
+
 </configuration>
